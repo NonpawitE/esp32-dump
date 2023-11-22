@@ -1,11 +1,3 @@
-/* SPI Slave example, sender (uses SPI master driver)
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -19,22 +11,6 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 
-/*
-SPI sender (master) example.
-
-This example is supposed to work together with the SPI receiver. It uses the standard SPI pins (MISO, MOSI, SCLK, CS) to
-transmit data over in a full-duplex fashion, that is, while the master puts data on the MOSI pin, the slave puts its own
-data on the MISO pin.
-
-This example uses one extra pin: GPIO_HANDSHAKE is used as a handshake pin. The slave makes this pin high as soon as it is
-ready to receive/send data. This code connects this line to a GPIO interrupt which gives the rdySem semaphore. The main
-task waits for this semaphore to be given before queueing a transmission.
-*/
-
-
-/*
-Pins in use. The SPI Master can use the GPIO mux, so feel free to change these if needed.
-*/
 
 #define GPIO_MOSI 11
 #define GPIO_MISO 13
@@ -42,73 +18,59 @@ Pins in use. The SPI Master can use the GPIO mux, so feel free to change these i
 #define GPIO_CS 10
 #define SENDER_HOST SPI2_HOST
 
-
-//The semaphore indicating the slave is ready to receive stuff.
-static QueueHandle_t rdySem;
-
-
-//Main application
 void app_main(void)
 {
     esp_err_t ret;
     spi_device_handle_t handle;
 
-    //Configuration for the SPI bus
-    spi_bus_config_t buscfg={
-        .mosi_io_num=GPIO_MOSI,
-        .miso_io_num=GPIO_MISO,
-        .sclk_io_num=GPIO_SCLK,
-        .quadwp_io_num=-1,
-        .quadhd_io_num=-1
+    spi_bus_config_t buscfg = {
+        .mosi_io_num	= GPIO_MOSI,
+        .miso_io_num	= GPIO_MISO,
+        .sclk_io_num	= GPIO_SCLK,
+        .quadwp_io_num	= -1,
+        .quadhd_io_num	= -1
     };
 
-    //Configuration for the SPI device on the other side of the bus
-    spi_device_interface_config_t devcfg={
-        .command_bits=0,
-        .address_bits=0,
-        .dummy_bits=0,
-        .clock_speed_hz=100000,
-        .duty_cycle_pos=128,        //50% duty cycle
-        .mode=0,
-        .spics_io_num=GPIO_CS,
-        .cs_ena_posttrans=3,        //Keep the CS low 3 cycles after transaction, to stop slave from missing the last bit when CS has less propagation delay than CLK
-        .queue_size=3
+    spi_device_interface_config_t devcfg = {
+        .command_bits		= 0,
+        .address_bits		= 0,
+        .dummy_bits			= 0,
+        .clock_speed_hz		= 21000000,
+        .duty_cycle_pos		= 128,
+        .mode				= 0,
+        .spics_io_num		= GPIO_CS,
+        .cs_ena_posttrans	= 3,
+        .queue_size			= 3
     };
 
-    int n=0;
+    int n = 0;
     char sendbuf[9] = {0};
     char recvbuf[9] = {0};
     spi_transaction_t t;
     memset(&t, 0, sizeof(t));
 
-    //Create the semaphore.
-    rdySem=xSemaphoreCreateBinary();
 
-
-    //Initialize the SPI bus and add the device we want to send stuff to.
     ret = spi_bus_initialize(SENDER_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    assert(ret==ESP_OK);
+    assert(ret == ESP_OK);
     ret = spi_bus_add_device(SENDER_HOST, &devcfg, &handle);
-    assert(ret==ESP_OK);
+    assert(ret == ESP_OK);
 
-    //Assume the slave is ready for the first transmission: if the slave started up before us, we will not detect
-    //positive edge on the handshake line.
-    xSemaphoreGive(rdySem);
 
-    while(1) {
+    while(1)
+    {
     	memset(sendbuf, 0x03, 8);
+    	memset(recvbuf, 0,    8);
 
-        t.length=8;
-        t.tx_buffer=sendbuf;
-        t.rx_buffer=recvbuf;
-        //Wait for slave to be ready for next byte before sending
-        xSemaphoreTake(rdySem, portMAX_DELAY); //Wait until slave is ready
-        ret=spi_device_transmit(handle, &t);
-        printf("Received: %s\n", recvbuf);
+        t.length	= 8;
+        t.tx_buffer	= sendbuf;
+        t.rx_buffer	= recvbuf;
+        ret = spi_device_transmit(handle, &t);
+        printf("Received: %02X\n", *(uint8_t *)recvbuf);
         n++;
+
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
 
-    //Never reached.
-    ret=spi_bus_remove_device(handle);
-    assert(ret==ESP_OK);
+    ret = spi_bus_remove_device(handle);
+    assert(ret == ESP_OK);
 }
